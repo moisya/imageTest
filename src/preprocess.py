@@ -1,9 +1,14 @@
 # src/preprocess.py
-import mne
 import numpy as np
-from typing import List, Tuple, Dict
+import pandas as pd  # <-- この行を追加！
+import mne
+from scipy import signal
+from typing import List, Dict, Tuple, Optional
+import warnings
 
-from utils import AppConfig, TrialData, QCResult
+from utils import TrialData, QCResult, AppConfig, FilterConfig, QCThresholds, WindowConfig
+
+# ... (以降のコードはそのまま) ...
 
 def filter_data(data: np.ndarray, config: AppConfig) -> np.ndarray:
     """MNEのフィルタ関数をラップして適用"""
