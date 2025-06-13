@@ -1,4 +1,5 @@
 # app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -18,8 +19,15 @@ from io_module import load_all_trial_data
 from preprocess import run_preprocessing_pipeline
 from features import extract_all_features
 from stats import run_statistical_analysis
-from viz import plot_qc_summary, plot_signal_qc, plot_feature_distribution, plot_feature_correlation
+# ★★★ ここを修正！実際に使っている関数のみをインポート ★★★
+from viz import (
+    plot_signal_qc, 
+    plot_feature_distribution, 
+    plot_feature_correlation
+)
 
+# ... (以降のコードは変更なし) ...
+# (前回の回答の app.py の残りの部分をここに貼り付け)
 # --- ページ設定 ---
 st.set_page_config(
     layout="wide", 
@@ -67,16 +75,12 @@ with st.sidebar:
     st.markdown("---")
     run_analysis = st.button("🚀 解析実行", type="primary", use_container_width=True)
 
-# ... (以降の run_full_pipeline 関数とメインエリアの表示ロジックは前回と同じなので省略) ...
-# (前回の回答の app.py の run_full_pipeline 以降をここに貼り付け)
-
 # --- 解析パイプライン関数（キャッシュあり） ---
 @st.cache_data(show_spinner="解析パイプラインを実行中...")
 def run_full_pipeline(_uploaded_files, _config):
     # 1. データ読み込み
     all_trials, meta_info = load_all_trial_data(_uploaded_files, _config)
     if not all_trials:
-        # st.errorはメインスレッドでしか呼べないので、Noneを返して呼び出し元で処理
         return None, None, None, "有効な試行データが読み込めませんでした。ファイル形式や内容を確認してください。"
     
     # 2. 前処理と品質管理
@@ -167,14 +171,17 @@ elif run_analysis:
                     res_col2.metric("効果量 (Cohen's d)", f"{stats_results.get('effect_size', 'N/A'):.3f}")
                     res_col3.metric("検定力 (Power)", f"{stats_results.get('power', 'N/A'):.3f}")
 
-                else:
-                    fig = plot_feature_correlation(features_df, feature_to_analyze, "dummy_valence")
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    st.subheader("統計検定結果 (ピアソン相関)")
-                    res_col1, res_col2 = st.columns(2)
-                    res_col1.metric("相関係数 (r)", f"{stats_results.get('corr_coef', 'N/A'):.3f}")
-                    res_col2.metric("p値", f"{stats_results.get('p_value', 'N/A'):.4f}")
+                else: # 相関分析
+                    if 'dummy_valence' in features_df.columns:
+                        fig = plot_feature_correlation(features_df, feature_to_analyze, "dummy_valence", stats_results)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        st.subheader("統計検定結果 (ピアソン相関)")
+                        res_col1, res_col2 = st.columns(2)
+                        res_col1.metric("相関係数 (r)", f"{stats_results.get('corr_coef', 'N/A'):.3f}")
+                        res_col2.metric("p値", f"{stats_results.get('p_value', 'N/A'):.4f}")
+                    else:
+                        st.warning("相関分析に必要な 'dummy_valence' 列が見つかりません。")
             else:
                 st.warning("分析できる特徴量データがありません。")
 
@@ -182,4 +189,4 @@ else:
     st.info("👈 左側のサイドバーからEEGファイルをアップロードし、「解析実行」ボタンを押してください。")
 
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.1</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.2</div>", unsafe_allow_html=True)
