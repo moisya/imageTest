@@ -97,37 +97,4 @@ Webフレームワーク	Streamlit
 データ検証	Pydantic
 XDF対応	pyxdf
 デプロイ	Streamlit Cloud
-🚀 セットアップと起動方法
-1. リポジトリのクローン
-git clone https://github.com/your-username/your-repository-name.git
-cd your-repository-name
-
-2. 依存ライブラリのインストール
-pip install -r requirements.txt
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
-3. パスワードの設定
-
-プロジェクトのルートに .streamlit フォルダを作成し、その中に secrets.toml ファイルを作成します。
-
-# .streamlit/secrets.toml
-APP_PASSWORD = "eeg2024" # 任意のパスワードに変更してください
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Toml
-IGNORE_WHEN_COPYING_END
-4. アプリケーションの起動
-streamlit run app.py
-IGNORE_WHEN_COPYING_START
-content_copy
-download
-Use code with caution.
-Bash
-IGNORE_WHEN_COPYING_END
 
