@@ -29,6 +29,7 @@ try:
     )
 except ImportError as e:
     st.error(f"必要なモジュールのインポートに失敗しました: {e}")
+    st.info("プロジェクトのフォルダ構成が正しいか、`src`フォルダ内に必要な.pyファイルがすべて存在するか確認してください。")
     st.stop()
 
 # --- ページ設定 ---
@@ -52,37 +53,43 @@ with st.sidebar:
     st.header("⚙️ 解析設定")
     
     st.subheader("📁 データファイル")
-    # ★★★ 複数ファイルのアップロードを許可 ★★★
     uploaded_eeg_files = st.file_uploader(
         "1. EEGファイルをアップロード (.xdf, etc.)",
         type=['xdf', 'edf', 'bdf', 'fif'],
-        accept_multiple_files=True, # ここをTrueに変更！
+        accept_multiple_files=True,
         help="複数の被験者のEEGファイルを同時にアップロードできます。"
     )
-    uploaded_survey_file = st.file_uploader(
+    uploaded_survey_files = st.file_uploader(
         "2. 評価データをアップロード (.csv, .xlsx)",
-        type=['csv', 'xlsx']
+        type=['csv', 'xlsx'],
+        accept_multiple_files=True,
+        help="複数の評価ファイルをまとめてアップロードできます。"
     )
     
     with st.expander("詳細パラメータ設定", expanded=True):
-        # (パラメータ設定のスライダー等は変更なし)
+        st.subheader("🔧 フィルタ設定")
         l_freq = st.slider("下限周波数 (Hz)", 0.1, 5.0, 1.0, 0.1, key="l_freq")
         h_freq = st.slider("上限周波数 (Hz)", 30.0, 100.0, 50.0, 1.0, key="h_freq")
-        amp_threshold = st.number_input("振幅閾値 (µV)", 1.0, 500.0, 150.0, 5.0, key="amp_thresh")
-        diff_threshold = st.number_input("隣接差閾値 (µV)", 1.0, 100.0, 50.0, 2.5, key="diff_thresh")
+        
+        st.subheader("🎯 品質管理 (µV単位)")
+        st.info("データの単位がボルト(V)の場合、100µVは 0.0001 Vです。")
+        amp_threshold = st.number_input("振幅閾値", min_value=0.0, max_value=500.0, value=150.0, step=5.0, key="amp_thresh", format="%.1f")
+        diff_threshold = st.number_input("隣接差閾値", min_value=0.0, max_value=100.0, value=50.0, step=2.5, key="diff_thresh", format="%.1f")
+        
+        st.subheader("⏱️ 時間窓設定")
         baseline_samples = st.slider("ベースラインサンプル数", 1, 5, 2, 1, key="base_samples")
         stim_samples = st.slider("刺激区間サンプル数", 1, 10, 5, 1, key="stim_samples")
     
     st.markdown("---")
     run_analysis = st.button("🚀 解析実行", type="primary", use_container_width=True)
 
-# --- 解析パイプライン関数 (引数名だけ変更) ---
+# --- 解析パイプライン関数 ---
 @st.cache_data(show_spinner="解析パイプラインを実行中...")
-def run_full_pipeline(_uploaded_eeg_files_list, _uploaded_survey_file, _config):
+def run_full_pipeline(_uploaded_eeg_files_list, _uploaded_survey_files_list, _config):
     if not _uploaded_eeg_files_list:
         return None, None, None, "EEGファイルがアップロードされていません。"
     
-    all_trials, _ = load_all_trial_data(_uploaded_eeg_files_list, _uploaded_survey_file, _config)
+    all_trials, _ = load_all_trial_data(_uploaded_eeg_files_list, _uploaded_survey_files_list, _config)
     if not all_trials:
         return None, None, None, "有効な試行データの読み込みに失敗しました。ファイル名や内容、IDのマッチングを確認してください。"
     
@@ -90,7 +97,7 @@ def run_full_pipeline(_uploaded_eeg_files_list, _uploaded_survey_file, _config):
     features_df = extract_all_features(processed_trials, _config)
     
     if features_df.empty:
-        return qc_stats, None, processed_trials, "有効な試行が全て除去されたため、特徴量を抽出できませんでした。品質管理の閾値を調整してください。"
+        return qc_stats, None, processed_trials, "有効な試行が全て除去されたため、特徴量を抽出できませんでした。品質管理の閾値やデータの単位を確認してください。"
 
     return qc_stats, features_df, processed_trials, None
 
@@ -106,9 +113,8 @@ if run_analysis:
             freq_bands=FrequencyBands()
         )
         
-        # ★★★ ファイルのリストをパイプラインに渡す ★★★
         qc_stats, features_df, processed_trials, error_message = run_full_pipeline(
-            uploaded_eeg_files, uploaded_survey_file, config
+            uploaded_eeg_files, uploaded_survey_files, config
         )
         st.session_state['results'] = {
             "qc_stats": qc_stats,
@@ -134,7 +140,6 @@ if st.session_state['analysis_run']:
 
         if qc_stats is not None and not qc_stats.empty:
             st.header("📋 解析サマリー")
-            # サマリーテーブルは複数人データに自然に対応
             st.dataframe(qc_stats, use_container_width=True)
         
         if processed_trials:
@@ -144,31 +149,32 @@ if st.session_state['analysis_run']:
             
             tabs = st.tabs(tab_list)
             
-            # --- ★★★ 被験者選択UIを追加 ★★★ ---
-            # qc_statsからユニークな被験者リストを取得
-            subject_list = sorted(list(qc_stats['subject_id'].unique()))
+            subject_list = sorted(list(qc_stats['subject_id'].unique())) if qc_stats is not None and not qc_stats.empty else []
 
             with tabs[0]:
                 st.header("Rawデータインスペクター")
-                selected_subject_raw = st.selectbox("被験者を選択", subject_list, key="raw_subject_selector")
-                trials_for_subject_raw = [t for t in processed_trials if t.subject_id == selected_subject_raw]
-                if trials_for_subject_raw:
-                    trial_ids_raw = [t.trial_id for t in trials_for_subject_raw]
-                    selected_trial_id_raw = st.selectbox("試行を選択", trial_ids_raw, key=f"raw_trial_selector_{selected_subject_raw}")
-                    selected_trial_raw = next((t for t in trials_for_subject_raw if t.trial_id == selected_trial_id_raw), None)
-                    if selected_trial_raw:
-                        fig_raw = plot_raw_signal_inspector(selected_trial_raw, config)
-                        st.plotly_chart(fig_raw, use_container_width=True)
+                if subject_list:
+                    selected_subject_raw = st.selectbox("被験者を選択", subject_list, key="raw_subject_selector")
+                    trials_for_subject_raw = [t for t in processed_trials if t.subject_id == selected_subject_raw]
+                    if trials_for_subject_raw:
+                        trial_ids_raw = [t.trial_id for t in trials_for_subject_raw]
+                        selected_trial_id_raw = st.selectbox("試行を選択", trial_ids_raw, key=f"raw_trial_selector")
+                        selected_trial_raw = next((t for t in trials_for_subject_raw if t.trial_id == selected_trial_id_raw), None)
+                        if selected_trial_raw:
+                            fig_raw = plot_raw_signal_inspector(selected_trial_raw, config)
+                            st.plotly_chart(fig_raw, use_container_width=True)
+                else:
+                    st.warning("表示できる被験者データがありません。")
 
             with tabs[1]:
                 st.header("前処理と品質管理の視覚化")
-                valid_subjects = sorted(list(qc_stats[qc_stats['is_valid']]['subject_id'].unique()))
+                valid_subjects = sorted(list(qc_stats[qc_stats['is_valid']]['subject_id'].unique())) if qc_stats is not None and not qc_stats.empty else []
                 if valid_subjects:
                     selected_subject_qc = st.selectbox("有効な試行がある被験者を選択", valid_subjects, key="qc_subject_selector")
                     valid_trials = [t for t in processed_trials if t.subject_id == selected_subject_qc and t.is_valid]
                     if valid_trials:
                         trial_ids_qc = [t.trial_id for t in valid_trials]
-                        selected_trial_id_qc = st.selectbox("有効な試行を選択", trial_ids_qc, key=f"qc_trial_selector_{selected_subject_qc}")
+                        selected_trial_id_qc = st.selectbox("有効な試行を選択", trial_ids_qc, key=f"qc_trial_selector")
                         selected_trial_qc = next((t for t in valid_trials if t.trial_id == selected_trial_id_qc), None)
                         if selected_trial_qc:
                             fig_qc = plot_signal_qc(selected_trial_qc, config)
@@ -196,12 +202,17 @@ if st.session_state['analysis_run']:
                             fig_dist = plot_feature_distribution(features_df, feature_to_analyze)
                             st.plotly_chart(fig_dist, use_container_width=True)
                             st.subheader("統計検定結果 (t検定)")
-                            # ... (メトリクス表示は同じ)
+                            res_col1, res_col2, res_col3 = st.columns(3)
+                            res_col1.metric("p値", f"{stats_results.get('p_value', 'N/A'):.4f}")
+                            res_col2.metric("効果量 (Cohen's d)", f"{stats_results.get('effect_size', 'N/A'):.3f}")
+                            res_col3.metric("検定力 (Power)", f"{stats_results.get('power', 'N/A'):.3f}")
                         else:
                             fig_corr = plot_feature_correlation(features_df, feature_to_analyze, "dummy_valence", stats_results)
                             st.plotly_chart(fig_corr, use_container_width=True)
                             st.subheader("統計検定結果 (ピアソン相関)")
-                            # ... (メトリクス表示は同じ)
+                            res_col1, res_col2 = st.columns(2)
+                            res_col1.metric("相関係数 (r)", f"{stats_results.get('corr_coef', 'N/A'):.3f}")
+                            res_col2.metric("p値", f"{stats_results.get('p_value', 'N/A'):.4f}")
     
     except Exception as e:
         st.error("アプリケーションの表示中に予期せぬエラーが発生しました。")
@@ -209,5 +220,6 @@ if st.session_state['analysis_run']:
 else:
     st.info("👈 左側のサイドバーからEEGファイル等をアップロードし、「解析実行」ボタンを押してください。")
 
+# --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.5 (Multi-Subject)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.6 (Multi-Subject Ready)</div>", unsafe_allow_html=True)
