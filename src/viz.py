@@ -116,13 +116,17 @@ def plot_feature_distribution(df: pd.DataFrame, feature: str):
     return fig
 
 def plot_feature_correlation(df: pd.DataFrame, feature: str, target: str, stats_results: Dict):
-    """特徴量と連続値の相関を散布図で可視化"""
+    """特徴量と連続値の相関を散布図で可視化。stats_resultsが空でも動作する。"""
     if target not in df.columns:
         fig = go.Figure()
         fig.update_layout(title=f"ターゲット列 '{target}' が見つかりません")
         return fig
         
     plot_df = df[[feature, target]].dropna()
+    if plot_df.empty:
+        fig = go.Figure()
+        fig.update_layout(title="表示できるデータがありません")
+        return fig
 
     fig = go.Figure(data=go.Scatter(
         x=plot_df[target],
@@ -131,8 +135,8 @@ def plot_feature_correlation(df: pd.DataFrame, feature: str, target: str, stats_
         marker=dict(size=10, opacity=0.7)
     ))
     
-    # 回帰直線を追加
-    if 'slope' in stats_results and 'intercept' in stats_results:
+    # ★★★ ここを修正！キーの存在をチェック ★★★
+    if stats_results and 'slope' in stats_results and 'intercept' in stats_results:
         slope = stats_results.get('slope', 0)
         intercept = stats_results.get('intercept', 0)
         x_range = np.array([plot_df[target].min(), plot_df[target].max()])
