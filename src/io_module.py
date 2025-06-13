@@ -1,5 +1,4 @@
 # src/io_module.py
-
 import mne
 import numpy as np
 import pandas as pd
@@ -14,79 +13,58 @@ import streamlit as st
 try:
     import pyxdf
 except ImportError:
-    # pyxdfがない場合、アプリはXDFを処理できないが、エラーにはならないようにする
     pyxdf = None
 
 from utils import AppConfig, TrialData, PreferenceLabel
 
-# --- ヘルパー関数 ---
-
 def normalize_subject_id(raw_id: str) -> str:
-    """様々な形式のIDを 'Sub1', 'Sub2' の形式に正規化する"""
     nums = re.findall(r'\d+', str(raw_id))
-    if not nums:
-        return str(raw_id)
+    if not nums: return str(raw_id)
     return f"Sub{int(nums[0])}"
 
 def parse_xdf_markers(marker_stream: Dict) -> pd.DataFrame:
-    """XDFのマーカーストリームをパースしてDataFrameを作成する"""
     rows = []
     if 'time_stamps' not in marker_stream or 'time_series' not in marker_stream:
         return pd.DataFrame()
-
     for ts, val_list in zip(marker_stream['time_stamps'], marker_stream['time_series']):
         if not val_list or not val_list[0]: continue
         val_str = val_list[0]
         marker_value = None
         try:
             obj = json.loads(val_str)
-            if isinstance(obj, dict) and 'img_id' in obj:
-                marker_value = obj.get('img_id')
-        except (json.JSONDecodeError, TypeError):
-            marker_value = val_str
-        
+            if isinstance(obj, dict) and 'img_id' in obj: marker_value = obj.get('img_id')
+        except (json.JSONDecodeError, TypeError): marker_value = val_str
         if marker_value is not None:
-            try:
-                rows.append({'marker_time': ts, 'marker_value': int(marker_value)})
-            except (ValueError, TypeError):
-                continue
+            try: rows.append({'marker_time': ts, 'marker_value': int(marker_value)})
+            except (ValueError, TypeError): continue
     return pd.DataFrame(rows)
 
-# --- データ読み込み関数 ---
-
 def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
-    """CSVまたはExcel形式のアンケートデータを読み込み、列名を正規化する"""
     try:
         fname = uploaded_file.name
-        if fname.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        elif fname.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(uploaded_file)
-        else:
-            st.error("評価データはCSVまたはExcel形式である必要があります。")
-            return None
+        if fname.endswith('.csv'): df = pd.read_csv(uploaded_file)
+        elif fname.endswith(('.xlsx', '.xls')): df = pd.read_excel(uploaded_file)
+        else: return None
         
         df.columns = [col.lower().replace(" ", "").replace("_", "") for col in df.columns]
-
         id_variants = ["subjectid", "subject", "id", "sid"]
         subject_id_col = next((v for v in id_variants if v in df.columns), None)
         if subject_id_col is None:
             st.error(f"評価データに必須列 ({'/'.join(id_variants)}) が見つかりません。")
             return None
         df = df.rename(columns={subject_id_col: 'subject_id'})
-
+        
         trial_variants = ["trialid", "imgid", "imageid"]
         trial_id_col = next((v for v in trial_variants if v in df.columns), None)
         if trial_id_col is None:
             st.error(f"評価データに必須列 ({'/'.join(trial_variants)}) が見つかりません。")
             return None
         df = df.rename(columns={trial_id_col: 'trial_id'})
-
+        
         like_variants = ["dislikelike", "sdscore", "preference", "like", "likescore"]
         like_col = next((v for v in like_variants if v in df.columns), None)
-        if like_col:
-            df = df.rename(columns={like_col: 'like_score'})
-
+        if like_col: df = df.rename(columns={like_col: 'like_score'})
+        
         df['subject_id'] = df['subject_id'].apply(normalize_subject_id)
         df['trial_id'] = pd.to_numeric(df['trial_id'], errors='coerce').dropna().astype(int)
         
@@ -97,32 +75,24 @@ def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
         return None
 
 def load_xdf_as_raw(file_path: str, config: AppConfig) -> Optional[Tuple[mne.io.Raw, pd.DataFrame]]:
-    """XDFをMNE RawオブジェクトとマーカーDataFrameに変換。ラベルがない場合も考慮。"""
-    if pyxdf is None:
-        st.error("XDFファイルを処理するために `pyxdf` ライブラリが必要です。")
-        return None, pd.DataFrame()
+    if pyxdf is None: return None, pd.DataFrame()
     try:
         streams, _ = pyxdf.load_xdf(file_path)
     except Exception as e:
         st.error(f"XDFファイルの読み込みでエラーが発生しました: {e}")
         return None, pd.DataFrame()
-
+    
     eeg_stream, marker_stream_raw = None, None
     for s in streams:
         stype = s['info']['type'][0].lower()
-        if 'eeg' in stype and int(s['info']['channel_count'][0]) >= 2:
-            eeg_stream = s
-        elif 'markers' in stype:
-            marker_stream_raw = s
+        if 'eeg' in stype and int(s['info']['channel_count'][0]) >= 2: eeg_stream = s
+        elif 'markers' in stype: marker_stream_raw = s
     
-    if eeg_stream is None:
-        st.warning("XDFファイル内に2チャネル以上のEEGストリームが見つかりませんでした。")
-        return None, pd.DataFrame()
+    if eeg_stream is None: return None, pd.DataFrame()
     
     eeg_data = eeg_stream['time_series'][:, :2].T
     sfreq = float(eeg_stream['info']['nominal_srate'][0])
-    config.filter.sfreq = sfreq # 設定オブジェクトを更新
-
+    config.filter.sfreq = sfreq
     ch_names = ['FP1', 'FP2']
     try:
         labels_info = eeg_stream['info']['desc'][0]['channels'][0]['channel']
@@ -130,10 +100,10 @@ def load_xdf_as_raw(file_path: str, config: AppConfig) -> Optional[Tuple[mne.io.
             ch_names = [ch['label'][0] for ch in labels_info][:2]
     except (TypeError, KeyError, IndexError, AttributeError):
         st.info("EEGストリームにチャンネルラベル情報が見つかりませんでした。先頭2chを 'FP1', 'FP2' と仮定します。")
-
+    
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types='eeg')
     raw = mne.io.RawArray(eeg_data, info, verbose=False)
-
+    
     markers_df = pd.DataFrame()
     if marker_stream_raw:
         markers_df = parse_xdf_markers(marker_stream_raw)
@@ -141,11 +111,9 @@ def load_xdf_as_raw(file_path: str, config: AppConfig) -> Optional[Tuple[mne.io.
             onsets = markers_df['marker_time'].values - eeg_stream['time_stamps'][0]
             descriptions = markers_df['marker_value'].astype(str).values
             raw.set_annotations(mne.Annotations(onset=onsets, duration=0, description=descriptions))
-            
     return raw, markers_df
 
 def get_events_from_raw(raw: mne.io.Raw) -> np.ndarray:
-    """Rawオブジェクトからイベント配列を取得する"""
     try:
         events, _ = mne.events_from_annotations(raw, verbose=False)
         return events
@@ -153,7 +121,6 @@ def get_events_from_raw(raw: mne.io.Raw) -> np.ndarray:
         return generate_dummy_events(raw)
 
 def generate_dummy_events(raw: mne.io.Raw) -> np.ndarray:
-    """イベントが見つからない場合にダミーイベントを生成する"""
     st.warning("イベントマーカーが見つかりませんでした。13秒間隔でダミーイベントを生成します。")
     trial_duration = 13.0
     n_trials = int(raw.n_times / raw.info['sfreq'] // trial_duration)
@@ -161,25 +128,19 @@ def generate_dummy_events(raw: mne.io.Raw) -> np.ndarray:
     for i in range(n_trials):
         event_sample = int((i * trial_duration + 3.0) * raw.info['sfreq'])
         event_id = i + 1
-        if event_id > 2:
-            events.append([event_sample, 0, event_id])
+        if event_id > 2: events.append([event_sample, 0, event_id])
     return np.array(events)
 
 def extract_trials(raw: mne.io.Raw, events: np.ndarray, config: AppConfig, subject_id: str, survey_df: Optional[pd.DataFrame]) -> List[TrialData]:
-    """イベントとアンケートデータに基づいて試行データを作成する"""
     trials = []
     sfreq = raw.info['sfreq']
-    
     valid_events = events[events[:, 2] > 2] if np.any(events[:, 2] > 2) else events
-
     for event in valid_events:
         trial_id = int(event[2])
         event_sample = event[0]
-        
         baseline_start = event_sample - int(config.win.baseline_len * sfreq)
         stim_end = event_sample + int(config.win.stim_end * sfreq)
-        if baseline_start < 0 or stim_end > raw.n_times:
-            continue
+        if baseline_start < 0 or stim_end > raw.n_times: continue
         
         baseline_data = raw.get_data(start=baseline_start, stop=event_sample)
         stim_data = raw.get_data(start=event_sample, stop=stim_end)
@@ -191,18 +152,19 @@ def extract_trials(raw: mne.io.Raw, events: np.ndarray, config: AppConfig, subje
                 score = trial_survey['like_score'].iloc[0]
                 if pd.notna(score):
                     preference = PreferenceLabel.LIKE if score >= 5 else PreferenceLabel.NEUTRAL
-        
         trials.append(TrialData(
             subject_id=subject_id, trial_id=trial_id, preference=preference,
             raw_baseline_data=baseline_data, raw_stim_data=stim_data
         ))
     return trials
 
-# --- メインのパイプライン関数 ---
-
-def load_all_trial_data(uploaded_eeg_files: List, uploaded_survey_file, config: AppConfig) -> Tuple[List[TrialData], dict]:
-    """アップロードされた全ファイルを処理し、TrialDataのリストを返す"""
-    survey_df = load_survey_data(uploaded_survey_file) if uploaded_survey_file else None
+def load_all_trial_data(uploaded_eeg_files: List, uploaded_survey_files: List, config: AppConfig) -> Tuple[List[TrialData], dict]:
+    survey_df = None
+    if uploaded_survey_files:
+        all_survey_dfs = [df for file in uploaded_survey_files if (df := load_survey_data(file)) is not None]
+        if all_survey_dfs:
+            survey_df = pd.concat(all_survey_dfs, ignore_index=True)
+            st.success(f"合計 {len(uploaded_survey_files)} 件の評価ファイルをマージしました。")
 
     all_trials = []
     for file in uploaded_eeg_files:
@@ -211,12 +173,8 @@ def load_all_trial_data(uploaded_eeg_files: List, uploaded_survey_file, config: 
         except Exception:
             st.warning(f"ファイル名 {file.name} から被験者IDを抽出できませんでした。スキップします。")
             continue
-
-        subject_survey_df = None
-        if survey_df is not None:
-            subject_survey_df = survey_df[survey_df['subject_id'] == subject_id]
-            if subject_survey_df.empty:
-                st.warning(f"アンケートデータに被験者 '{subject_id}' のデータが見つかりませんでした。")
+        
+        subject_survey_df = survey_df[survey_df['subject_id'] == subject_id] if survey_df is not None else None
         
         raw, _ = None, pd.DataFrame()
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.name).suffix) as tmp_file:
@@ -225,20 +183,15 @@ def load_all_trial_data(uploaded_eeg_files: List, uploaded_survey_file, config: 
         try:
             if file.name.lower().endswith('.xdf'):
                 raw, _ = load_xdf_as_raw(file_path, config)
-            # (ここに他のファイル形式のローダーを追加可能)
         finally:
             os.unlink(file_path)
-
         if raw is None:
             st.error(f"ファイル {file.name} の読み込みに失敗しました。")
             continue
-        
         events = get_events_from_raw(raw)
         if len(events) == 0:
             st.warning(f"被験者 {subject_id} のイベントが見つかりませんでした。")
             continue
-            
         subject_trials = extract_trials(raw, events, config, subject_id, subject_survey_df)
         all_trials.extend(subject_trials)
-        
     return all_trials, {}
