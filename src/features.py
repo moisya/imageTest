@@ -1,88 +1,53 @@
 # src/features.py
 import numpy as np
 import pandas as pd
-from scipy import signal # <-- ★★★ ここのタイプミスを修正 ★★★
-from typing import List, Dict, Tuple
+from scipy import signal
+from typing import List, Dict
 import antropy
 
 from utils import AppConfig, TrialData
 
 def get_band_power(data: np.ndarray, sfreq: float, band: tuple) -> float:
-    """単一チャネルのバンドパワーを計算"""
-    # Welch法の窓長を適切に設定
     win = min(int(4 * sfreq), len(data))
     if win == 0: return 0.0
-
-    # ★★★ ここも修正。scipy.signal を正しく呼び出す ★★★
     freqs, psd = signal.welch(data, sfreq, nperseg=win)
-    
     idx_band = np.logical_and(freqs >= band[0], freqs <= band[1])
-    # バンド内に周波数点がない場合のエッジケース対応
     if not np.any(idx_band): return 0.0
-    
-    # バンド内のパワーを合計（psdはパワー密度なので、周波数分解能を考慮する必要があるが、ここでは簡略化）
     return np.sum(psd[idx_band])
 
 def compute_features_for_epoch(epoch: np.ndarray, config: AppConfig) -> Dict[str, np.ndarray]:
-    """1エポック(FP1, FP2)分の全特徴量を計算"""
     sfreq = config.filter.sfreq
     features = {}
-
-    # パワー
-    for band_name, band_freqs in config.freq_bands:
-        # Pydanticのモデルから直接値を取得
-        band_tuple = getattr(config.freq_bands, band_name)
-        powers = np.array([get_band_power(epoch[i], sfreq, band_tuple) for i in range(epoch.shape[0])])
+    for band_name, band_freqs in config.freq_bands.model_dump().items():
+        powers = np.array([get_band_power(epoch[i], sfreq, band_freqs) for i in range(epoch.shape[0])])
         features[f'{band_name}_power'] = powers
-
-    # エントロピー
-    # detrendは不要。antropyの関数内で処理される
-    features['differential_entropy'] = epoch.var(axis=1) # DEは分散と等価
+    
+    features['differential_entropy'] = epoch.var(axis=1)
     features['permutation_entropy'] = np.array([antropy.perm_entropy(epoch[i], normalize=True) for i in range(epoch.shape[0])])
     features['spectral_entropy'] = np.array([antropy.spectral_entropy(epoch[i], sf=sfreq, method='welch', normalize=True) for i in range(epoch.shape[0])])
-    
     return features
 
 def extract_all_features(processed_trials: List[TrialData], config: AppConfig) -> pd.DataFrame:
-    """全有効試行から特徴量を抽出し、正規化してDataFrameを作成"""
     feature_list = []
-
     for trial in processed_trials:
-        if not trial.is_valid: continue
+        if not trial.is_valid or trial.clean_baseline_data is None or trial.clean_stim_data is None: continue
         
-        # is_validでもデータがNoneの可能性を考慮
-        if trial.clean_baseline_data is None or trial.clean_stim_data is None:
-            continue
-
         baseline_feats = compute_features_for_epoch(trial.clean_baseline_data, config)
         stim_feats = compute_features_for_epoch(trial.clean_stim_data, config)
         
-        trial_features = {
-            'subject_id': trial.subject_id,
-            'trial_id': trial.trial_id,
-            'preference': trial.preference.value
-        }
-
-        # ベースライン比と非対称性を計算
+        trial_features = {'subject_id': trial.subject_id, 'trial_id': trial.trial_id, 'preference': trial.preference.value}
+        
         for feat_name in baseline_feats:
-            base_val = baseline_feats[feat_name] + 1e-12 # ゼロ除算を避けるための微小値
+            base_val = baseline_feats[feat_name] + 1e-12
             stim_val = stim_feats[feat_name]
-            
             ratio = (stim_val - base_val) / base_val
-            
-            # 2チャネルあることを確認
             if len(ratio) == 2:
                 trial_features[f'FP1_{feat_name}_ratio'] = ratio[0]
                 trial_features[f'FP2_{feat_name}_ratio'] = ratio[1]
                 trial_features[f'{feat_name}_asymmetry'] = ratio[1] - ratio[0]
-        
         feature_list.append(trial_features)
 
-    if not feature_list:
-        return pd.DataFrame()
-
+    if not feature_list: return pd.DataFrame()
     df = pd.DataFrame(feature_list)
-    if not df.empty:
-      df['dummy_valence'] = np.random.uniform(1, 9, len(df))
-    
+    df['dummy_valence'] = np.random.uniform(1, 9, len(df))
     return df
