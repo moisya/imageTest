@@ -3,13 +3,12 @@
 import mne
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional  # 修正箇所
 
 from utils import AppConfig, TrialData, QCResult, WindowConfig
 
-def filter_data(data: np.ndarray, config: AppConfig) -> np.ndarray:
+def filter_data(data: np.ndarray, config: AppConfig) -> Optional[np.ndarray]:
     """MNEのフィルタ関数をラップしてEEGデータにフィルタを適用する"""
-    # データが空、または短すぎる場合は何もしない
     if data is None or data.shape[1] < 10:
         return data
         
@@ -22,7 +21,7 @@ def filter_data(data: np.ndarray, config: AppConfig) -> np.ndarray:
         verbose=False
     )
 
-def notch_filter_data(data: np.ndarray, config: AppConfig) -> np.ndarray:
+def notch_filter_data(data: np.ndarray, config: AppConfig) -> Optional[np.ndarray]:
     """MNEのノッチフィルタ関数をラップして適用する"""
     if data is None or data.shape[1] < 10:
         return data
@@ -36,11 +35,7 @@ def notch_filter_data(data: np.ndarray, config: AppConfig) -> np.ndarray:
     )
 
 def check_window_quality(window: np.ndarray, config: AppConfig) -> bool:
-    """
-    単一の窓の品質をチェックする。
-    データの単位がVかµVかに依存しないよう、単位変換 (* 1e6) を削除。
-    ユーザーがデータのスケールに合わせて閾値を設定することを想定。
-    """
+    """単一の窓の品質をチェックする"""
     if window is None:
         return False
 
@@ -54,7 +49,7 @@ def check_window_quality(window: np.ndarray, config: AppConfig) -> bool:
         
     return True
 
-def get_clean_windows(data: np.ndarray, config: AppConfig, num_samples_to_take: int) -> Tuple[Optional[np.ndarray], QCResult]:
+def get_clean_windows(data: Optional[np.ndarray], config: AppConfig, num_samples_to_take: int) -> Tuple[Optional[np.ndarray], QCResult]:
     """データからクリーンな窓を抽出し、指定された数だけランダムにサンプリングして平均化する"""
     win_len_samples = int(config.win.win_len * config.filter.sfreq)
     
@@ -72,18 +67,14 @@ def get_clean_windows(data: np.ndarray, config: AppConfig, num_samples_to_take: 
     n_clean = len(clean_windows)
     quality_score = n_clean / total_windows if total_windows > 0 else 0.0
     
-    # 有効な窓が、要求されたサンプル数以上あるか？
-    if n_clean >= num_samples_to_take:
-        # ランダムにサンプリング（再現性のためにシードを固定）
+    is_valid = n_clean >= num_samples_to_take
+    
+    avg_clean_data = None
+    if is_valid:
         np.random.seed(42)
         indices = np.random.choice(n_clean, num_samples_to_take, replace=False)
         selected_windows = [clean_windows[i] for i in indices]
-        
         avg_clean_data = np.mean(selected_windows, axis=0)
-        is_valid = True
-    else:
-        avg_clean_data = None
-        is_valid = False
 
     qc_result = QCResult(
         is_valid=is_valid, 
@@ -99,15 +90,15 @@ def run_preprocessing_pipeline(all_trials: List[TrialData], config: AppConfig) -
     qc_summary_rows = []
 
     for trial in all_trials:
-        # 1. フィルタリング
         trial.filtered_baseline_data = notch_filter_data(filter_data(trial.raw_baseline_data, config), config)
         
-        # 刺激区間は開始0.5秒後からを対象とする
         stim_offset_samples = int(config.win.stim_start * config.filter.sfreq)
-        stim_data_for_filtering = trial.raw_stim_data[:, stim_offset_samples:]
-        trial.filtered_stim_data = notch_filter_data(filter_data(stim_data_for_filtering, config), config)
+        if trial.raw_stim_data.shape[1] > stim_offset_samples:
+            stim_data_for_filtering = trial.raw_stim_data[:, stim_offset_samples:]
+            trial.filtered_stim_data = notch_filter_data(filter_data(stim_data_for_filtering, config), config)
+        else:
+            trial.filtered_stim_data = None
 
-        # 2. 品質管理と窓抽出
         trial.clean_baseline_data, trial.qc_info['baseline'] = get_clean_windows(
             trial.filtered_baseline_data, config, config.win.baseline_samples
         )
@@ -116,11 +107,9 @@ def run_preprocessing_pipeline(all_trials: List[TrialData], config: AppConfig) -
             trial.filtered_stim_data, config, config.win.stim_samples
         )
 
-        # 3. 試行の有効性を最終判断
         trial.is_valid = trial.qc_info['baseline'].is_valid and trial.qc_info['stim'].is_valid
         processed_trials.append(trial)
         
-        # 4. サマリー情報を作成
         qc_summary_rows.append({
             "subject_id": trial.subject_id,
             "trial_id": trial.trial_id,
