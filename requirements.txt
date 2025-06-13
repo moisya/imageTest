@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+scipy
+mne
+antropy
+pingouin
+plotly
+pydantic
+pyxdf
