@@ -1,17 +1,14 @@
 # src/utils.py
 from pydantic import BaseModel, Field
-from typing import Tuple, List, Optional, Dict, Any
+from typing import Tuple, List, Optional, Dict
 import numpy as np
-import pandas as pd
 from dataclasses import dataclass, field
 from enum import Enum
 
-# --- Enum定義 ---
 class PreferenceLabel(str, Enum):
     LIKE = "好き"
     NEUTRAL = "そうでもない"
 
-# --- Pydantic設定クラス ---
 class FilterConfig(BaseModel):
     l_freq: float = Field(1.0, description="下限周波数 (Hz)")
     h_freq: float = Field(50.0, description="上限周波数 (Hz)")
@@ -19,8 +16,8 @@ class FilterConfig(BaseModel):
     sfreq: float = Field(250.0, description="サンプリング周波数 (Hz)", mutable=True)
 
 class QCThresholds(BaseModel):
-    amp_uV: float = Field(80.0, description="振幅閾値 (µV)")
-    diff_uV: float = Field(35.0, description="隣接サンプル差閾値 (µV)")
+    amp_uV: float = Field(150.0, description="振幅閾値 (µV)")
+    diff_uV: float = Field(50.0, description="隣接サンプル差閾値 (µV)")
 
 class WindowConfig(BaseModel):
     baseline_len: float = Field(3.0, description="利用可能なベースライン長 (秒)")
@@ -41,7 +38,6 @@ class AppConfig(BaseModel):
     win: WindowConfig = Field(default_factory=WindowConfig)
     freq_bands: FrequencyBands = Field(default_factory=FrequencyBands)
 
-# --- Dataclass定義 ---
 @dataclass
 class QCResult:
     is_valid: bool
