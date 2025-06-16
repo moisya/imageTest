@@ -47,6 +47,7 @@ def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
         else: return None
         
         df.columns = [col.lower().replace(" ", "").replace("_", "") for col in df.columns]
+        
         id_variants = ["subjectid", "subject", "id", "sid"]
         subject_id_col = next((v for v in id_variants if v in df.columns), None)
         if subject_id_col is None:
@@ -61,10 +62,11 @@ def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
             return None
         df = df.rename(columns={trial_id_col: 'trial_id'})
         
-        like_variants = ["dislikelike", "sdscore", "preference", "like", "likescore"]
-        like_col = next((v for v in like_variants if v in df.columns), None)
-        if like_col: df = df.rename(columns={like_col: 'like_score'})
-        
+        rename_map = {"dislikelike": "like_score", "samval": "valence", "samaro": "arousal"}
+        for original, new_name in rename_map.items():
+            col_found = next((c for c in df.columns if original in c), None)
+            if col_found: df = df.rename(columns={col_found: new_name})
+
         df['subject_id'] = df['subject_id'].apply(normalize_subject_id)
         df['trial_id'] = pd.to_numeric(df['trial_id'], errors='coerce').dropna().astype(int)
         
@@ -104,7 +106,6 @@ def load_xdf_as_raw(file_path: str, config: AppConfig) -> Optional[Tuple[mne.io.
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types='eeg')
     raw = mne.io.RawArray(eeg_data, info, verbose=False)
     
-    markers_df = pd.DataFrame()
     if marker_stream_raw:
         markers_df = parse_xdf_markers(marker_stream_raw)
         if not markers_df.empty:
@@ -145,15 +146,22 @@ def extract_trials(raw: mne.io.Raw, events: np.ndarray, config: AppConfig, subje
         baseline_data = raw.get_data(start=baseline_start, stop=event_sample)
         stim_data = raw.get_data(start=event_sample, stop=stim_end)
         
-        preference = PreferenceLabel.NEUTRAL
+        preference, valence, arousal = PreferenceLabel.NEUTRAL, None, None
         if survey_df is not None and not survey_df.empty:
             trial_survey = survey_df[survey_df['trial_id'] == trial_id]
-            if not trial_survey.empty and 'like_score' in trial_survey.columns:
-                score = trial_survey['like_score'].iloc[0]
-                if pd.notna(score):
-                    preference = PreferenceLabel.LIKE if score >= 5 else PreferenceLabel.NEUTRAL
+            if not trial_survey.empty:
+                row = trial_survey.iloc[0]
+                if 'like_score' in row and pd.notna(row['like_score']):
+                    score = row['like_score']
+                    if score >= 6: preference = PreferenceLabel.LIKE
+                    elif score <= 2: preference = PreferenceLabel.DISLIKE
+                    else: preference = PreferenceLabel.NEUTRAL
+                if 'valence' in row and pd.notna(row['valence']): valence = row['valence']
+                if 'arousal' in row and pd.notna(row['arousal']): arousal = row['arousal']
+        
         trials.append(TrialData(
             subject_id=subject_id, trial_id=trial_id, preference=preference,
+            valence=valence, arousal=arousal,
             raw_baseline_data=baseline_data, raw_stim_data=stim_data
         ))
     return trials
