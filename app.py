@@ -126,7 +126,7 @@ if run_analysis:
         st.session_state['analysis_run'] = True
 
 # --- メインエリアの表示ロジック ---
-if st.session_state['analysis_run']:
+if st.session_state.get('analysis_run', False):
     results = st.session_state['results']
     qc_stats = results.get("qc_stats")
     features_df = results.get("features_df")
@@ -163,8 +163,7 @@ if st.session_state['analysis_run']:
                         if selected_trial_raw:
                             fig_raw = plot_raw_signal_inspector(selected_trial_raw, config)
                             st.plotly_chart(fig_raw, use_container_width=True)
-                else:
-                    st.warning("表示できる被験者データがありません。")
+                else: st.warning("表示できる被験者データがありません。")
 
             with tabs[1]:
                 st.header("前処理と品質管理の視覚化")
@@ -179,8 +178,7 @@ if st.session_state['analysis_run']:
                         if selected_trial_qc:
                             fig_qc = plot_signal_qc(selected_trial_qc, config)
                             st.plotly_chart(fig_qc, use_container_width=True)
-                else:
-                    st.warning("表示できる有効な試行がありません。")
+                else: st.warning("表示できる有効な試行がありません。")
 
             if len(tabs) > 2:
                 with tabs[2]:
@@ -188,32 +186,32 @@ if st.session_state['analysis_run']:
                     st.info("この統計解析は、アップロードされた全被験者の有効な試行データを統合して行われます。")
                     col1, col2 = st.columns(2)
                     with col1:
-                        feature_options = sorted(features_df.columns.drop(['subject_id', 'trial_id', 'preference', 'dummy_valence'], errors='ignore'))
-                        feature_to_analyze = st.selectbox("分析する特徴量を選択", feature_options)
+                        feature_options = sorted(features_df.columns.drop(['subject_id', 'trial_id', 'preference', 'valence', 'arousal'], errors='ignore'))
+                        feature_to_analyze = st.selectbox("1. 分析したい脳波特徴量を選択", feature_options)
                     with col2:
-                        analysis_type = st.selectbox("分析方法を選択", ["グループ比較 (好き vs そうでもない)", "相関分析 (ダミー連続値)"])
+                        analysis_options = ["好き/嫌い/そうでもない (グループ比較)"]
+                        if 'valence' in features_df.columns and features_df['valence'].notna().any(): analysis_options.append("Valenceスコア (相関分析)")
+                        if 'arousal' in features_df.columns and features_df['arousal'].notna().any(): analysis_options.append("Arousalスコア (相関分析)")
+                        analysis_choice = st.selectbox("2. 比較したい評価軸を選択", analysis_options)
                     
-                    stats_results = run_statistical_analysis(features_df, feature_to_analyze, analysis_type)
-                    
-                    if not stats_results:
-                        st.warning(f"特徴量 '{feature_to_analyze}' の統計値を計算できませんでした。")
+                    if "グループ比較" in analysis_choice:
+                        stats_results = run_statistical_analysis(features_df, feature_to_analyze, "group")
+                        fig_dist = plot_feature_distribution(features_df, feature_to_analyze)
+                        st.plotly_chart(fig_dist, use_container_width=True)
+                        st.subheader("統計検定結果 (ANOVA / t-test)")
+                        p_val = stats_results.get('p_value')
+                        st.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
                     else:
-                        if analysis_type == "グループ比較 (好き vs そうでもない)":
-                            fig_dist = plot_feature_distribution(features_df, feature_to_analyze)
-                            st.plotly_chart(fig_dist, use_container_width=True)
-                            st.subheader("統計検定結果 (t検定)")
-                            res_col1, res_col2, res_col3 = st.columns(3)
-                            res_col1.metric("p値", f"{stats_results.get('p_value', 'N/A'):.4f}")
-                            res_col2.metric("効果量 (Cohen's d)", f"{stats_results.get('effect_size', 'N/A'):.3f}")
-                            res_col3.metric("検定力 (Power)", f"{stats_results.get('power', 'N/A'):.3f}")
-                        else:
-                            fig_corr = plot_feature_correlation(features_df, feature_to_analyze, "dummy_valence", stats_results)
-                            st.plotly_chart(fig_corr, use_container_width=True)
-                            st.subheader("統計検定結果 (ピアソン相関)")
-                            res_col1, res_col2 = st.columns(2)
-                            res_col1.metric("相関係数 (r)", f"{stats_results.get('corr_coef', 'N/A'):.3f}")
-                            res_col2.metric("p値", f"{stats_results.get('p_value', 'N/A'):.4f}")
-    
+                        target_col = 'valence' if 'Valence' in analysis_choice else 'arousal'
+                        stats_results = run_statistical_analysis(features_df, feature_to_analyze, "correlation", target_col)
+                        fig_corr = plot_feature_correlation(features_df, feature_to_analyze, target_col, stats_results)
+                        st.plotly_chart(fig_corr, use_container_width=True)
+                        st.subheader(f"統計検定結果 ({target_col}とのピアソン相関)")
+                        res_col1, res_col2 = st.columns(2)
+                        r_val = stats_results.get('corr_coef')
+                        p_val = stats_results.get('p_value')
+                        res_col1.metric("相関係数 (r)", f"{r_val:.3f}" if r_val is not None else "N/A")
+                        res_col2.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
     except Exception as e:
         st.error("アプリケーションの表示中に予期せぬエラーが発生しました。")
         st.exception(e)
@@ -222,4 +220,4 @@ else:
 
 # --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.6 (Multi-Subject Ready)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.7 (Full-featured)</div>", unsafe_allow_html=True)
