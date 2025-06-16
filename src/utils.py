@@ -1,4 +1,5 @@
 # src/utils.py
+
 from pydantic import BaseModel, Field
 from typing import Tuple, List, Optional, Dict
 import numpy as np
@@ -46,15 +47,19 @@ class QCResult:
     total_windows: int
     quality_score: float
 
+# ★★★ ここを修正 ★★★
 @dataclass
 class TrialData:
+    # --- デフォルト値なしのフィールド (必須引数) を先に定義 ---
     subject_id: str
     trial_id: int
     preference: PreferenceLabel
-    valence: Optional[float] = None
-    arousal: Optional[float] = None
     raw_baseline_data: np.ndarray
     raw_stim_data: np.ndarray
+    
+    # --- デフォルト値ありのフィールド (任意引数) を後に定義 ---
+    valence: Optional[float] = None
+    arousal: Optional[float] = None
     filtered_baseline_data: Optional[np.ndarray] = None
     filtered_stim_data: Optional[np.ndarray] = None
     clean_baseline_data: Optional[np.ndarray] = None
