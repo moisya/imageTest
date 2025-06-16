@@ -69,7 +69,7 @@ with st.sidebar:
     with st.expander("詳細パラメータ設定", expanded=True):
         st.subheader("🔧 フィルタ設定")
         l_freq = st.slider("下限周波数 (Hz)", 0.1, 5.0, 1.0, 0.1, key="l_freq")
-        h_freq = st.slider("上限周波数 (Hz)", 5.0, 100.0, 50.0, 1.0, key="h_freq")
+        h_freq = st.slider("上限周波数 (Hz)", 30.0, 100.0, 50.0, 1.0, key="h_freq")
         
         st.subheader("🎯 品質管理 (µV単位)")
         st.info("データの単位がボルト(V)の場合、100µVは 0.0001 Vです。")
@@ -140,7 +140,19 @@ if st.session_state.get('analysis_run', False):
 
         if qc_stats is not None and not qc_stats.empty:
             st.header("📋 解析サマリー")
-            st.dataframe(qc_stats, use_container_width=True)
+            
+            valid_df = qc_stats[qc_stats['is_valid']]
+            total_valid_trials = len(valid_df)
+            counts = valid_df['preference'].value_counts()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("✅ 有効試行 (合計)", f"{total_valid_trials} 件")
+            col2.metric("👍 好き", f"{counts.get('好き', 0)} 件")
+            col3.metric("👎 嫌い", f"{counts.get('嫌い', 0)} 件")
+            col4.metric("😐 そうでもない", f"{counts.get('そうでもない', 0)} 件")
+            
+            with st.expander("詳細な品質管理レポートを表示"):
+                st.dataframe(qc_stats, use_container_width=True)
         
         if processed_trials:
             tab_list = [" raw データ検査", "🔧 前処理結果"]
@@ -158,12 +170,13 @@ if st.session_state.get('analysis_run', False):
                     trials_for_subject_raw = [t for t in processed_trials if t.subject_id == selected_subject_raw]
                     if trials_for_subject_raw:
                         trial_ids_raw = [t.trial_id for t in trials_for_subject_raw]
-                        selected_trial_id_raw = st.selectbox("試行を選択", trial_ids_raw, key=f"raw_trial_selector")
+                        selected_trial_id_raw = st.selectbox("試行を選択", trial_ids_raw, key="raw_trial_selector")
                         selected_trial_raw = next((t for t in trials_for_subject_raw if t.trial_id == selected_trial_id_raw), None)
                         if selected_trial_raw:
                             fig_raw = plot_raw_signal_inspector(selected_trial_raw, config)
                             st.plotly_chart(fig_raw, use_container_width=True)
-                else: st.warning("表示できる被験者データがありません。")
+                else:
+                    st.warning("表示できる被験者データがありません。")
 
             with tabs[1]:
                 st.header("前処理と品質管理の視覚化")
@@ -173,12 +186,13 @@ if st.session_state.get('analysis_run', False):
                     valid_trials = [t for t in processed_trials if t.subject_id == selected_subject_qc and t.is_valid]
                     if valid_trials:
                         trial_ids_qc = [t.trial_id for t in valid_trials]
-                        selected_trial_id_qc = st.selectbox("有効な試行を選択", trial_ids_qc, key=f"qc_trial_selector")
+                        selected_trial_id_qc = st.selectbox("有効な試行を選択", trial_ids_qc, key="qc_trial_selector")
                         selected_trial_qc = next((t for t in valid_trials if t.trial_id == selected_trial_id_qc), None)
                         if selected_trial_qc:
                             fig_qc = plot_signal_qc(selected_trial_qc, config)
                             st.plotly_chart(fig_qc, use_container_width=True)
-                else: st.warning("表示できる有効な試行がありません。")
+                else:
+                    st.warning("表示できる有効な試行がありません。")
 
             if len(tabs) > 2:
                 with tabs[2]:
@@ -208,10 +222,10 @@ if st.session_state.get('analysis_run', False):
                         st.plotly_chart(fig_corr, use_container_width=True)
                         st.subheader(f"統計検定結果 ({target_col}とのピアソン相関)")
                         res_col1, res_col2 = st.columns(2)
-                        r_val = stats_results.get('corr_coef')
-                        p_val = stats_results.get('p_value')
+                        r_val, p_val = stats_results.get('corr_coef'), stats_results.get('p_value')
                         res_col1.metric("相関係数 (r)", f"{r_val:.3f}" if r_val is not None else "N/A")
                         res_col2.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
+    
     except Exception as e:
         st.error("アプリケーションの表示中に予期せぬエラーが発生しました。")
         st.exception(e)
@@ -220,4 +234,4 @@ else:
 
 # --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.7 (Full-featured)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.8 (Enhanced Summary)</div>", unsafe_allow_html=True)
