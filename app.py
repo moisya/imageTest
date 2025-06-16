@@ -69,7 +69,7 @@ with st.sidebar:
     with st.expander("詳細パラメータ設定", expanded=True):
         st.subheader("🔧 フィルタ設定")
         l_freq = st.slider("下限周波数 (Hz)", 0.1, 5.0, 1.0, 0.1, key="l_freq")
-        h_freq = st.slider("上限周波数 (Hz)", 30.0, 100.0, 50.0, 1.0, key="h_freq")
+        h_freq = st.slider("上限周波数 (Hz)", 5.0, 100.0, 50.0, 1.0, key="h_freq")
         
         st.subheader("🎯 品質管理 (µV単位)")
         st.info("データの単位がボルト(V)の場合、100µVは 0.0001 Vです。")
