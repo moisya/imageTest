@@ -7,6 +7,7 @@ from enum import Enum
 
 class PreferenceLabel(str, Enum):
     LIKE = "好き"
+    DISLIKE = "嫌い"
     NEUTRAL = "そうでもない"
 
 class FilterConfig(BaseModel):
@@ -50,6 +51,8 @@ class TrialData:
     subject_id: str
     trial_id: int
     preference: PreferenceLabel
+    valence: Optional[float] = None
+    arousal: Optional[float] = None
     raw_baseline_data: np.ndarray
     raw_stim_data: np.ndarray
     filtered_baseline_data: Optional[np.ndarray] = None
