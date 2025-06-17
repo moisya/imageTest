@@ -1,4 +1,5 @@
 # src/io_module.py
+
 import mne
 import numpy as np
 import pandas as pd
@@ -13,16 +14,22 @@ import streamlit as st
 try:
     import pyxdf
 except ImportError:
+    # pyxdfがない場合でもアプリがクラッシュしないようにする
     pyxdf = None
 
 from utils import AppConfig, TrialData, PreferenceLabel
 
+# --- ヘルパー関数 ---
+
 def normalize_subject_id(raw_id: str) -> str:
+    """様々な形式のIDを 'Sub1', 'Sub2' の形式に正規化する"""
     nums = re.findall(r'\d+', str(raw_id))
-    if not nums: return str(raw_id)
+    if not nums:
+        return str(raw_id)
     return f"Sub{int(nums[0])}"
 
 def parse_xdf_markers(marker_stream: Dict) -> pd.DataFrame:
+    """XDFのマーカーストリームをパースしてDataFrameを作成する"""
     rows = []
     if 'time_stamps' not in marker_stream or 'time_series' not in marker_stream:
         return pd.DataFrame()
@@ -39,11 +46,14 @@ def parse_xdf_markers(marker_stream: Dict) -> pd.DataFrame:
             except (ValueError, TypeError): continue
     return pd.DataFrame(rows)
 
+# --- データ読み込み関数 ---
+
 def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
+    """CSVまたはExcel形式のアンケートデータを読み込み、列名を正規化する"""
     try:
         fname = uploaded_file.name
         if fname.endswith('.csv'): df = pd.read_csv(uploaded_file)
-        elif fname.endswith(('.xlsx', '.xls')): df = pd.read_excel(uploaded_file)
+        elif fname.endswith(('.xlsx', '.xls')): df = pd.read_excel(uploaded_file, engine='openpyxl')
         else: return None
         
         df.columns = [col.lower().replace(" ", "").replace("_", "") for col in df.columns]
@@ -51,14 +61,14 @@ def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
         id_variants = ["subjectid", "subject", "id", "sid"]
         subject_id_col = next((v for v in id_variants if v in df.columns), None)
         if subject_id_col is None:
-            st.error(f"評価データに必須列 ({'/'.join(id_variants)}) が見つかりません。")
+            st.error(f"評価データ '{fname}' に必須列 ({'/'.join(id_variants)}) が見つかりません。")
             return None
         df = df.rename(columns={subject_id_col: 'subject_id'})
         
         trial_variants = ["trialid", "imgid", "imageid"]
         trial_id_col = next((v for v in trial_variants if v in df.columns), None)
         if trial_id_col is None:
-            st.error(f"評価データに必須列 ({'/'.join(trial_variants)}) が見つかりません。")
+            st.error(f"評価データ '{fname}' に必須列 ({'/'.join(trial_variants)}) が見つかりません。")
             return None
         df = df.rename(columns={trial_id_col: 'trial_id'})
         
@@ -70,14 +80,16 @@ def load_survey_data(uploaded_file) -> Optional[pd.DataFrame]:
         df['subject_id'] = df['subject_id'].apply(normalize_subject_id)
         df['trial_id'] = pd.to_numeric(df['trial_id'], errors='coerce').dropna().astype(int)
         
-        st.success(f"評価データ読み込み完了 ({len(df)}件)")
         return df
     except Exception as e:
-        st.error(f"評価データの読み込みに失敗しました: {e}")
+        st.error(f"評価データ '{uploaded_file.name}' の読み込みに失敗しました: {e}")
         return None
 
 def load_xdf_as_raw(file_path: str, config: AppConfig) -> Optional[Tuple[mne.io.Raw, pd.DataFrame]]:
-    if pyxdf is None: return None, pd.DataFrame()
+    """XDFをMNE RawオブジェクトとマーカーDataFrameに変換。ラベルがない場合も考慮。"""
+    if pyxdf is None:
+        st.error("XDFファイルを処理するために `pyxdf` ライブラリが必要です。")
+        return None, pd.DataFrame()
     try:
         streams, _ = pyxdf.load_xdf(file_path)
     except Exception as e:
@@ -115,6 +127,7 @@ def load_xdf_as_raw(file_path: str, config: AppConfig) -> Optional[Tuple[mne.io.
     return raw, markers_df
 
 def get_events_from_raw(raw: mne.io.Raw) -> np.ndarray:
+    """Rawオブジェクトからイベント配列を取得する"""
     try:
         events, _ = mne.events_from_annotations(raw, verbose=False)
         return events
@@ -122,6 +135,7 @@ def get_events_from_raw(raw: mne.io.Raw) -> np.ndarray:
         return generate_dummy_events(raw)
 
 def generate_dummy_events(raw: mne.io.Raw) -> np.ndarray:
+    """イベントが見つからない場合にダミーイベントを生成する"""
     st.warning("イベントマーカーが見つかりませんでした。13秒間隔でダミーイベントを生成します。")
     trial_duration = 13.0
     n_trials = int(raw.n_times / raw.info['sfreq'] // trial_duration)
@@ -133,6 +147,7 @@ def generate_dummy_events(raw: mne.io.Raw) -> np.ndarray:
     return np.array(events)
 
 def extract_trials(raw: mne.io.Raw, events: np.ndarray, config: AppConfig, subject_id: str, survey_df: Optional[pd.DataFrame]) -> List[TrialData]:
+    """イベントとアンケートデータに基づいて試行データを作成する"""
     trials = []
     sfreq = raw.info['sfreq']
     valid_events = events[events[:, 2] > 2] if np.any(events[:, 2] > 2) else events
@@ -166,7 +181,9 @@ def extract_trials(raw: mne.io.Raw, events: np.ndarray, config: AppConfig, subje
         ))
     return trials
 
+# --- メインのパイプライン関数 ---
 def load_all_trial_data(uploaded_eeg_files: List, uploaded_survey_files: List, config: AppConfig) -> Tuple[List[TrialData], dict]:
+    """アップロードされた全ファイルを処理し、TrialDataのリストを返す"""
     survey_df = None
     if uploaded_survey_files:
         all_survey_dfs = [df for file in uploaded_survey_files if (df := load_survey_data(file)) is not None]
@@ -191,15 +208,29 @@ def load_all_trial_data(uploaded_eeg_files: List, uploaded_survey_files: List, c
         try:
             if file.name.lower().endswith('.xdf'):
                 raw, _ = load_xdf_as_raw(file_path, config)
+            # (ここに他のファイル形式のローダーを追加可能)
         finally:
             os.unlink(file_path)
+
         if raw is None:
             st.error(f"ファイル {file.name} の読み込みに失敗しました。")
             continue
+        
         events = get_events_from_raw(raw)
         if len(events) == 0:
             st.warning(f"被験者 {subject_id} のイベントが見つかりませんでした。")
             continue
-        subject_trials = extract_trials(raw, events, config, subject_id, subject_survey_df)
+            
+        # --- イベントの重複を除去 ---
+        events_df = pd.DataFrame(events, columns=['sample', 'zero', 'event_id'])
+        unique_events_df = events_df.drop_duplicates(subset='event_id', keep='first')
+        unique_events = unique_events_df.to_numpy()
+        
+        if len(events) > len(unique_events):
+            st.info(f"被験者 {subject_id}: {len(events)}個のイベントを検出し、重複を除去して {len(unique_events)}個のユニークな試行を処理します。")
+        
+        # 重複除去したイベントで試行を作成
+        subject_trials = extract_trials(raw, unique_events, config, subject_id, subject_survey_df)
         all_trials.extend(subject_trials)
+        
     return all_trials, {}
