@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 # --- パス設定とモジュールインポート ---
+# Streamlit Cloudの環境でも安定して動作するようにパス設定を調整
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -118,7 +119,6 @@ if run_analysis:
 
 # --- メインエリアの表示ロジック ---
 if st.session_state.get('analysis_run', False):
-    # ★★★ ここを修正: ブロックの先頭で、まず全ての変数を定義する ★★★
     results = st.session_state.get('results', {})
     qc_stats = results.get("qc_stats")
     features_df = results.get("features_df")
@@ -146,7 +146,9 @@ if st.session_state.get('analysis_run', False):
             st.markdown("---")
             st.subheader("被験者ごとの内訳")
             subject_list = sorted(list(qc_stats['subject_id'].unique()))
-            cols = st.columns(len(subject_list) or 1)
+            num_subjects = len(subject_list)
+            cols = st.columns(num_subjects if num_subjects > 0 else 1)
+            
             for i, subject_id in enumerate(subject_list):
                 with cols[i]:
                     st.markdown(f"**{subject_id}**")
@@ -166,19 +168,72 @@ if st.session_state.get('analysis_run', False):
                 tab_list.append("📈 統計解析")
             
             tabs = st.tabs(tab_list)
+            
             subject_list = sorted(list(qc_stats['subject_id'].unique())) if qc_stats is not None and not qc_stats.empty else []
 
             with tabs[0]:
-                # (Rawデータ検査タブのコードは変更なし)
-                pass
+                st.header("Rawデータインスペクター")
+                if subject_list:
+                    selected_subject_raw = st.selectbox("被験者を選択", subject_list, key="raw_subject_selector")
+                    trials_for_subject_raw = [t for t in processed_trials if t.subject_id == selected_subject_raw]
+                    if trials_for_subject_raw:
+                        trial_ids_raw = [t.trial_id for t in trials_for_subject_raw]
+                        selected_trial_id_raw = st.selectbox("試行を選択", trial_ids_raw, key="raw_trial_selector")
+                        selected_trial_raw = next((t for t in trials_for_subject_raw if t.trial_id == selected_trial_id_raw), None)
+                        if selected_trial_raw:
+                            fig_raw = plot_raw_signal_inspector(selected_trial_raw, config)
+                            st.plotly_chart(fig_raw, use_container_width=True)
+                else:
+                    st.warning("表示できる被験者データがありません。")
+
             with tabs[1]:
-                # (前処理結果タブのコードは変更なし)
-                pass
+                st.header("前処理と品質管理の視覚化")
+                valid_subjects = sorted(list(qc_stats[qc_stats['is_valid']]['subject_id'].unique())) if qc_stats is not None and not qc_stats.empty else []
+                if valid_subjects:
+                    selected_subject_qc = st.selectbox("有効な試行がある被験者を選択", valid_subjects, key="qc_subject_selector")
+                    valid_trials = [t for t in processed_trials if t.subject_id == selected_subject_qc and t.is_valid]
+                    if valid_trials:
+                        trial_ids_qc = [t.trial_id for t in valid_trials]
+                        selected_trial_id_qc = st.selectbox("有効な試行を選択", trial_ids_qc, key="qc_trial_selector")
+                        selected_trial_qc = next((t for t in valid_trials if t.trial_id == selected_trial_id_qc), None)
+                        if selected_trial_qc:
+                            fig_qc = plot_signal_qc(selected_trial_qc, config)
+                            st.plotly_chart(fig_qc, use_container_width=True)
+                else:
+                    st.warning("表示できる有効な試行がありません。")
+
             if len(tabs) > 2:
                 with tabs[2]:
-                    # (統計解析タブのコードは変更なし)
-                    pass
-
+                    st.header("特徴量の統計的比較")
+                    st.info("この統計解析は、アップロードされた全被験者の有効な試行データを統合して行われます。")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        feature_options = sorted(features_df.columns.drop(['subject_id', 'trial_id', 'preference', 'valence', 'arousal'], errors='ignore'))
+                        feature_to_analyze = st.selectbox("1. 分析したい脳波特徴量を選択", feature_options)
+                    with col2:
+                        analysis_options = ["好き/嫌い/そうでもない (グループ比較)"]
+                        if 'valence' in features_df.columns and features_df['valence'].notna().any(): analysis_options.append("Valenceスコア (相関分析)")
+                        if 'arousal' in features_df.columns and features_df['arousal'].notna().any(): analysis_options.append("Arousalスコア (相関分析)")
+                        analysis_choice = st.selectbox("2. 比較したい評価軸を選択", analysis_options)
+                    
+                    if "グループ比較" in analysis_choice:
+                        stats_results = run_statistical_analysis(features_df, feature_to_analyze, "group")
+                        fig_dist = plot_feature_distribution(features_df, feature_to_analyze)
+                        st.plotly_chart(fig_dist, use_container_width=True)
+                        st.subheader("統計検定結果 (ANOVA / t-test)")
+                        p_val = stats_results.get('p_value')
+                        st.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
+                    else:
+                        target_col = 'valence' if 'Valence' in analysis_choice else 'arousal'
+                        stats_results = run_statistical_analysis(features_df, feature_to_analyze, "correlation", target_col)
+                        fig_corr = plot_feature_correlation(features_df, feature_to_analyze, target_col, stats_results)
+                        st.plotly_chart(fig_corr, use_container_width=True)
+                        st.subheader(f"統計検定結果 ({target_col}とのピアソン相関)")
+                        res_col1, res_col2 = st.columns(2)
+                        r_val, p_val = stats_results.get('corr_coef'), stats_results.get('p_value')
+                        res_col1.metric("相関係数 (r)", f"{r_val:.3f}" if r_val is not None else "N/A")
+                        res_col2.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
+    
     except Exception as e:
         st.error("アプリケーションの表示中に予期せぬエラーが発生しました。")
         st.exception(e)
