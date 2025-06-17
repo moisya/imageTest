@@ -8,7 +8,6 @@ from pathlib import Path
 import time
 
 # --- パス設定とモジュールインポート ---
-# Streamlit Cloudの環境でも安定して動作するようにパス設定を調整
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -41,7 +40,7 @@ st.set_page_config(layout="wide", page_title="EEG画像嗜好解析システム"
 if not check_password():
     st.stop()
 
-# --- Session State の初期化 (初回アクセス時のみ) ---
+# --- Session State の初期化 ---
 if 'analysis_run' not in st.session_state:
     st.session_state['analysis_run'] = False
     st.session_state['results'] = {}
@@ -67,9 +66,21 @@ with st.sidebar:
     )
     
     with st.expander("詳細パラメータ設定", expanded=True):
+        # --- ★★★ ここから修正 ★★★ ---
         st.subheader("🔧 フィルタ設定")
-        l_freq = st.slider("下限周波数 (Hz)", 0.1, 5.0, 1.0, 0.1, key="l_freq")
-        h_freq = st.slider("上限周波数 (Hz)", 30.0, 100.0, 50.0, 1.0, key="h_freq")
+        # 2つのスライダーを1つのレンジスライダーに統合
+        freq_range = st.slider(
+            "周波数帯域 (Hz)",
+            min_value=0.1,
+            max_value=100.0,
+            value=(1.0, 50.0), # デフォルトの範囲をタプルで指定
+            step=0.5,
+            key="freq_range_slider",
+            help="解析対象とする周波数の下限と上限を設定します。"
+        )
+        # レンジスライダーの結果（タプル）をそれぞれの変数に分解
+        l_freq, h_freq = freq_range
+        # --- ★★★ 修正ここまで ★★★ ---
         
         st.subheader("🎯 品質管理 (µV単位)")
         st.info("データの単位がボルト(V)の場合、100µVは 0.0001 Vです。")
@@ -266,4 +277,4 @@ else:
 
 # --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.2 (w/ Reset)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.3 (UI-Refined)</div>", unsafe_allow_html=True)
