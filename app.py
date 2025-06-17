@@ -157,6 +157,18 @@ if st.session_state.get('analysis_run', False):
                     st.markdown(f"👍 好き: {subject_counts.get('好き', 0)}件")
                     st.markdown(f"👎 嫌い: {subject_counts.get('嫌い', 0)}件")
                     st.markdown(f"😐 そうでもない: {subject_counts.get('そうでもない', 0)}件")
+            
+            if features_df is not None and not features_df.empty:
+                st.markdown("---")
+                st.subheader("⬇️ 解析結果のダウンロード")
+                csv_data = features_df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="特徴量データをCSVでダウンロード",
+                    data=csv_data,
+                    file_name="eeg_features_analysis.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
 
             with st.expander("詳細な品質管理レポートを表示"):
                 st.dataframe(qc_stats, use_container_width=True)
@@ -238,4 +250,4 @@ else:
 
 # --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.0 (Final)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.1 (Final)</div>", unsafe_allow_html=True)
