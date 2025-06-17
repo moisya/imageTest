@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 # --- パス設定とモジュールインポート ---
-# Streamlit Cloudの環境でも安定して動作するようにパス設定を調整
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -168,7 +167,6 @@ if st.session_state.get('analysis_run', False):
                 tab_list.append("📈 統計解析")
             
             tabs = st.tabs(tab_list)
-            
             subject_list = sorted(list(qc_stats['subject_id'].unique())) if qc_stats is not None and not qc_stats.empty else []
 
             with tabs[0]:
@@ -183,8 +181,7 @@ if st.session_state.get('analysis_run', False):
                         if selected_trial_raw:
                             fig_raw = plot_raw_signal_inspector(selected_trial_raw, config)
                             st.plotly_chart(fig_raw, use_container_width=True)
-                else:
-                    st.warning("表示できる被験者データがありません。")
+                else: st.warning("表示できる被験者データがありません。")
 
             with tabs[1]:
                 st.header("前処理と品質管理の視覚化")
@@ -199,8 +196,7 @@ if st.session_state.get('analysis_run', False):
                         if selected_trial_qc:
                             fig_qc = plot_signal_qc(selected_trial_qc, config)
                             st.plotly_chart(fig_qc, use_container_width=True)
-                else:
-                    st.warning("表示できる有効な試行がありません。")
+                else: st.warning("表示できる有効な試行がありません。")
 
             if len(tabs) > 2:
                 with tabs[2]:
@@ -222,7 +218,7 @@ if st.session_state.get('analysis_run', False):
                         st.plotly_chart(fig_dist, use_container_width=True)
                         st.subheader("統計検定結果 (ANOVA / t-test)")
                         p_val = stats_results.get('p_value')
-                        st.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
+                        st.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A", help="グループ間に統計的に意味のある差があるかを示します (p < 0.05が一般的基準)")
                     else:
                         target_col = 'valence' if 'Valence' in analysis_choice else 'arousal'
                         stats_results = run_statistical_analysis(features_df, feature_to_analyze, "correlation", target_col)
@@ -231,8 +227,8 @@ if st.session_state.get('analysis_run', False):
                         st.subheader(f"統計検定結果 ({target_col}とのピアソン相関)")
                         res_col1, res_col2 = st.columns(2)
                         r_val, p_val = stats_results.get('corr_coef'), stats_results.get('p_value')
-                        res_col1.metric("相関係数 (r)", f"{r_val:.3f}" if r_val is not None else "N/A")
-                        res_col2.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A")
+                        res_col1.metric("相関係数 (r)", f"{r_val:.3f}" if r_val is not None else "N/A", help="関係の強さと方向を示します (-1から+1)")
+                        res_col2.metric("p値", f"{p_val:.4f}" if p_val is not None else "N/A", help="この相関が偶然でないかを示します (p < 0.05が一般的基準)")
     
     except Exception as e:
         st.error("アプリケーションの表示中に予期せぬエラーが発生しました。")
@@ -242,4 +238,4 @@ else:
 
 # --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v1.9 (Final)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.0 (Final)</div>", unsafe_allow_html=True)
