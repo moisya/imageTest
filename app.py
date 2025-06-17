@@ -5,8 +5,10 @@ import pandas as pd
 import numpy as np
 import sys
 from pathlib import Path
+import time
 
 # --- パス設定とモジュールインポート ---
+# Streamlit Cloudの環境でも安定して動作するようにパス設定を調整
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -39,7 +41,7 @@ st.set_page_config(layout="wide", page_title="EEG画像嗜好解析システム"
 if not check_password():
     st.stop()
 
-# --- Session State の初期化 ---
+# --- Session State の初期化 (初回アクセス時のみ) ---
 if 'analysis_run' not in st.session_state:
     st.session_state['analysis_run'] = False
     st.session_state['results'] = {}
@@ -79,7 +81,12 @@ with st.sidebar:
         stim_samples = st.slider("刺激区間サンプル数", 1, 10, 5, 1, key="stim_samples")
     
     st.markdown("---")
-    run_analysis = st.button("🚀 解析実行", type="primary", use_container_width=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        run_analysis = st.button("🚀 解析実行", type="primary", use_container_width=True)
+    with col2:
+        reset_app = st.button("リセット", use_container_width=True)
 
 # --- 解析パイプライン関数 ---
 @st.cache_data(show_spinner="解析パイプラインを実行中...")
@@ -94,6 +101,14 @@ def run_full_pipeline(_uploaded_eeg_files_list, _uploaded_survey_files_list, _co
     if features_df.empty:
         return qc_stats, None, processed_trials, "有効な試行が全て除去されました。"
     return qc_stats, features_df, processed_trials, None
+
+# --- リセットボタンの処理ロジック ---
+if reset_app:
+    st.cache_data.clear()
+    st.session_state.clear()
+    st.success("状態がリセットされました。ページをリロードして、再度解析を開始してください。")
+    time.sleep(2)
+    st.rerun()
 
 # --- ボタンが押されたときの処理 ---
 if run_analysis:
@@ -115,6 +130,7 @@ if run_analysis:
             "config": config
         }
         st.session_state['analysis_run'] = True
+        st.rerun()
 
 # --- メインエリアの表示ロジック ---
 if st.session_state.get('analysis_run', False):
@@ -250,4 +266,4 @@ else:
 
 # --- フッター ---
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.1 (Final)</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #888;'>🧠 EEG画像嗜好解析システム v2.2 (w/ Reset)</div>", unsafe_allow_html=True)
