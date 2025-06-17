@@ -129,10 +129,7 @@ if run_analysis:
 if st.session_state.get('analysis_run', False):
     results = st.session_state['results']
     qc_stats = results.get("qc_stats")
-    features_df = results.get("features_df")
-    processed_trials = results.get("processed_trials")
-    error_message = results.get("error_message")
-    config = results.get("config")
+    # ... (他の変数取得も同じ)
 
     try:
         if error_message:
@@ -141,18 +138,42 @@ if st.session_state.get('analysis_run', False):
         if qc_stats is not None and not qc_stats.empty:
             st.header("📋 解析サマリー")
             
+            # --- ★★★ ここからサマリー強化 ★★★ ---
             valid_df = qc_stats[qc_stats['is_valid']]
             total_valid_trials = len(valid_df)
-            counts = valid_df['preference'].value_counts()
+            total_counts = valid_df['preference'].value_counts()
             
+            st.subheader("全体合計")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("✅ 有効試行 (合計)", f"{total_valid_trials} 件")
-            col2.metric("👍 好き", f"{counts.get('好き', 0)} 件")
-            col3.metric("👎 嫌い", f"{counts.get('嫌い', 0)} 件")
-            col4.metric("😐 そうでもない", f"{counts.get('そうでもない', 0)} 件")
+            col2.metric("👍 好き", f"{total_counts.get('好き', 0)} 件")
+            col3.metric("👎 嫌い", f"{total_counts.get('嫌い', 0)} 件")
+            col4.metric("😐 そうでもない", f"{total_counts.get('そうでもない', 0)} 件")
             
+            st.markdown("---")
+            
+            st.subheader("被験者ごとの内訳")
+            # qc_statsからユニークな被験者リストを取得
+            subject_list = sorted(list(qc_stats['subject_id'].unique()))
+            
+            # 被験者ごとに列を作成して表示
+            num_subjects = len(subject_list)
+            cols = st.columns(num_subjects)
+            
+            for i, subject_id in enumerate(subject_list):
+                with cols[i]:
+                    st.markdown(f"**{subject_id}**")
+                    subject_valid_df = valid_df[valid_df['subject_id'] == subject_id]
+                    subject_counts = subject_valid_df['preference'].value_counts()
+                    
+                    st.markdown(f"✅ **有効: {len(subject_valid_df)}件**")
+                    st.markdown(f"👍 好き: {subject_counts.get('好き', 0)}件")
+                    st.markdown(f"👎 嫌い: {subject_counts.get('嫌い', 0)}件")
+                    st.markdown(f"😐 そうでもない: {subject_counts.get('そうでもない', 0)}件")
+
             with st.expander("詳細な品質管理レポートを表示"):
                 st.dataframe(qc_stats, use_container_width=True)
+            # --- ★★★ サマリー強化ここまで ★★★ ---
         
         if processed_trials:
             tab_list = [" raw データ検査", "🔧 前処理結果"]
