@@ -1,5 +1,4 @@
 # src/utils.py
-
 from pydantic import BaseModel, Field
 from typing import Tuple, List, Optional, Dict
 import numpy as np
@@ -24,7 +23,7 @@ class QCThresholds(BaseModel):
 class WindowConfig(BaseModel):
     baseline_len: float = Field(3.0, description="利用可能なベースライン長 (秒)")
     baseline_samples: int = Field(2, description="ベースラインから抽出する1秒窓の数")
-    stim_start: float = Field(0.0, description="刺激提示後の無視区間 (秒)") # 0.5秒から0.0秒に変更
+    stim_start: float = Field(0.0, description="刺激提示後の無視区間 (秒)")
     stim_end: float = Field(10.0, description="刺激提示の終了時点 (秒)")
     win_len: float = Field(1.0, description="解析窓長 (秒)")
     stim_samples: int = Field(5, description="刺激区間からランダム抽出する窓の数")
@@ -49,14 +48,11 @@ class QCResult:
 
 @dataclass
 class TrialData:
-    # --- デフォルト値なしのフィールド (必須引数) を先に定義 ---
     subject_id: str
     trial_id: int
     preference: PreferenceLabel
     raw_baseline_data: np.ndarray
     raw_stim_data: np.ndarray
-    
-    # --- デフォルト値ありのフィールド (任意引数) を後に定義 ---
     valence: Optional[float] = None
     arousal: Optional[float] = None
     filtered_baseline_data: Optional[np.ndarray] = None
