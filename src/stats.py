@@ -8,7 +8,6 @@ def run_statistical_analysis(df: pd.DataFrame, feature: str, analysis_type: str,
     """統計解析を実行し、結果を返す。失敗した場合は空の辞書を返す。"""
     if df.empty or feature not in df.columns:
         return {}
-
     try:
         if analysis_type == "group":
             groups = [df.loc[df['preference'] == pref, feature].dropna() for pref in df['preference'].unique()]
@@ -18,7 +17,9 @@ def run_statistical_analysis(df: pd.DataFrame, feature: str, analysis_type: str,
             
             if len(valid_groups) == 2:
                 ttest_res = stats.ttest_ind(valid_groups[0], valid_groups[1], equal_var=False)
-                return {'p_value': ttest_res.pvalue, 'statistic': ttest_res.statistic}
+                effect_size = pg.compute_effsize(valid_groups[0], valid_groups[1], eftype='cohen')
+                power = pg.power_ttest2n(len(valid_groups[0]), len(valid_groups[1]), d=effect_size)
+                return {'p_value': ttest_res.pvalue, 'statistic': ttest_res.statistic, 'effect_size': effect_size, 'power': power}
             else:
                 f_val, p_val = stats.f_oneway(*valid_groups)
                 return {'p_value': p_val, 'f_value': f_val}
