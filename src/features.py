@@ -35,7 +35,13 @@ def extract_all_features(processed_trials: List[TrialData], config: AppConfig) -
         baseline_feats = compute_features_for_epoch(trial.clean_baseline_data, config)
         stim_feats = compute_features_for_epoch(trial.clean_stim_data, config)
         
-        trial_features = {'subject_id': trial.subject_id, 'trial_id': trial.trial_id, 'preference': trial.preference.value}
+        trial_features = {
+            'subject_id': trial.subject_id,
+            'trial_id': trial.trial_id,
+            'preference': trial.preference.value,
+            'valence': trial.valence,
+            'arousal': trial.arousal
+        }
         
         for feat_name in baseline_feats:
             base_val = baseline_feats[feat_name] + 1e-12
@@ -48,6 +54,4 @@ def extract_all_features(processed_trials: List[TrialData], config: AppConfig) -
         feature_list.append(trial_features)
 
     if not feature_list: return pd.DataFrame()
-    df = pd.DataFrame(feature_list)
-    df['dummy_valence'] = np.random.uniform(1, 9, len(df))
-    return df
+    return pd.DataFrame(feature_list)
